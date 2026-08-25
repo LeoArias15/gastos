@@ -1130,8 +1130,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
         row.className = 'row';
         var cls = Math.abs(p.balance) < 0.5 ? 'zero' : (p.balance > 0 ? 'pos' : 'neg');
         var label = Math.abs(p.balance) < 0.5 ? 'Al dia' : (p.balance > 0 ? 'Le deben' : 'Debe poner');
+        var toggleHtml = isAdmin() ? ('<button class="paid-toggle ' + (p.paid ? 'on' : '') + '" data-toggle="' + p.id + '" title="Marcar como liquidado">' + (p.paid ? ICON_CHECK : '') + '</button>') : '';
         row.innerHTML =
-          '<button class="paid-toggle ' + (p.paid ? 'on' : '') + '" data-toggle="' + p.id + '" title="Marcar como liquidado">' + (p.paid ? ICON_CHECK : '') + '</button>' +
+          toggleHtml +
           '<div class="avatar">' + initials(p.name) + '</div>' +
           '<div class="row-body"><div class="row-title">' + escapeHtml(p.name) + '</div></div>' +
           '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">' +
@@ -1192,8 +1193,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
       var settledText = p.paid ? "Liquidado" : (bp && Math.abs(bp.balance) < 0.5 ? "Al dia" : "Pendiente");
       var row = document.createElement('div');
       row.className = 'row';
+      var toggleHtml = isAdmin() ? ('<button class="paid-toggle ' + (p.paid ? 'on' : '') + '" data-toggle="' + p.id + '" title="Marcar como liquidado">' + (p.paid ? ICON_CHECK : '') + '</button>') : '';
       row.innerHTML =
-        '<button class="paid-toggle ' + (p.paid ? 'on' : '') + '" data-toggle="' + p.id + '" title="Marcar como liquidado">' + (p.paid ? ICON_CHECK : '') + '</button>' +
+        toggleHtml +
         '<div class="avatar">' + initials(p.name) + '</div>' +
         '<div class="row-body" data-open="' + p.id + '">' +
           '<div class="row-title">' + escapeHtml(p.name) + '</div>' +
