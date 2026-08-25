@@ -717,8 +717,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
     }catch(e){}
   }
 
+  var DEFAULT_GROUP_ID = "15e24aa4-d662-4b08-ab23-7d3ea232c6e4";
+
   async function ensureGroup(){
-    var id = getGroupIdFromUrl() || localStorage.getItem(GROUP_STORAGE_KEY);
+    var id = getGroupIdFromUrl() || localStorage.getItem(GROUP_STORAGE_KEY) || DEFAULT_GROUP_ID;
     if(id){
       var existing = await supabase.from('groups').select('id').eq('id', id).maybeSingle();
       if(existing.data){
