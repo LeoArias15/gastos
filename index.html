@@ -509,9 +509,14 @@
           <div class="large-title">Resumen</div>
           <div class="subtitle">Carne asada</div>
         </div>
-        <button class="nav-btn" id="btn-export-pdf" title="Exportar PDF">
-          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
-        </button>
+        <div style="display:flex; gap:8px;">
+          <button class="nav-btn" id="btn-share" title="Compartir link del grupo">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.5l6.8-3.9"/><path d="M8.6 13.5l6.8 3.9"/></svg>
+          </button>
+          <button class="nav-btn" id="btn-export-pdf" title="Exportar PDF">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -653,31 +658,95 @@
   <div class="totals" id="print-totals"></div>
 </div>
 
-<script>
+<script type="module">
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 (function(){
   "use strict";
 
-  var STORAGE_KEY = "carneAsadaGastosV1";
+  var SUPABASE_URL = "https://vokqknnbchmlqalqseqm.supabase.co";
+  var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZva3Frbm5iY2htbHFhbHFzZXFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc2MTk1MjQsImV4cCI6MjEwMzE5NTUyNH0.JH9VHukHeqKGpoEhcNEHR2nq1eyP_hLKagYPhqNzpmc";
+  var supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  var LEGACY_STORAGE_KEY = "carneAsadaGastosV1";
+  var GROUP_STORAGE_KEY = "carneAsadaGroupIdV1";
 
   var state = { people: [], expenses: [] };
+  var groupId = null;
 
-  function load(){
+  function getGroupIdFromUrl(){
+    return new URLSearchParams(window.location.search).get('g');
+  }
+  function setGroupIdInUrl(id){
+    var url = new URL(window.location.href);
+    url.searchParams.set('g', id);
+    window.history.replaceState({}, '', url);
+  }
+
+  async function migrateLegacyData(){
     try{
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if(raw){
-        var parsed = JSON.parse(raw);
-        if(parsed && Array.isArray(parsed.people) && Array.isArray(parsed.expenses)){
-          state = parsed;
-        }
+      var raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+      if(!raw) return;
+      var parsed = JSON.parse(raw);
+      if(!parsed || !Array.isArray(parsed.people) || parsed.people.length === 0){
+        localStorage.removeItem(LEGACY_STORAGE_KEY);
+        return;
       }
+      var idMap = {};
+      for(var i=0;i<parsed.people.length;i++){
+        var p = parsed.people[i];
+        var res = await supabase.from('people').insert({ group_id: groupId, name: p.name, paid: !!p.paid }).select('id').single();
+        if(res.data) idMap[p.id] = res.data.id;
+      }
+      var expenses = Array.isArray(parsed.expenses) ? parsed.expenses : [];
+      for(var j=0;j<expenses.length;j++){
+        var e = expenses[j];
+        var newPersonId = idMap[e.personId];
+        if(!newPersonId) continue;
+        await supabase.from('expenses').insert({ group_id: groupId, person_id: newPersonId, amount: e.amount, description: e.desc });
+      }
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+      showToast("Datos anteriores migrados");
     }catch(e){}
   }
-  function save(){
-    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
-    catch(e){ showToast("No se pudo guardar"); }
+
+  async function ensureGroup(){
+    var id = getGroupIdFromUrl() || localStorage.getItem(GROUP_STORAGE_KEY);
+    if(id){
+      var existing = await supabase.from('groups').select('id').eq('id', id).maybeSingle();
+      if(existing.data){
+        groupId = id;
+        localStorage.setItem(GROUP_STORAGE_KEY, id);
+        setGroupIdInUrl(id);
+        return;
+      }
+    }
+    var created = await supabase.from('groups').insert({ name: 'Carne Asada' }).select('id').single();
+    if(created.error || !created.data){
+      showToast("No se pudo conectar con el servidor");
+      return;
+    }
+    groupId = created.data.id;
+    localStorage.setItem(GROUP_STORAGE_KEY, groupId);
+    setGroupIdInUrl(groupId);
+    await migrateLegacyData();
   }
 
-  function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+  async function fetchAll(){
+    if(!groupId) return;
+    var peopleRes = await supabase.from('people').select('*').eq('group_id', groupId).order('created_at');
+    var expensesRes = await supabase.from('expenses').select('*').eq('group_id', groupId).order('created_at', { ascending:false });
+    state.people = (peopleRes.data || []).map(function(p){ return { id:p.id, name:p.name, paid:p.paid }; });
+    state.expenses = (expensesRes.data || []).map(function(e){ return { id:e.id, amount:Number(e.amount), desc:e.description, personId:e.person_id }; });
+    renderAll();
+  }
+
+  function subscribeRealtime(){
+    supabase.channel('group-' + groupId)
+      .on('postgres_changes', { event:'*', schema:'public', table:'people', filter:'group_id=eq.' + groupId }, function(){ fetchAll(); })
+      .on('postgres_changes', { event:'*', schema:'public', table:'expenses', filter:'group_id=eq.' + groupId }, function(){ fetchAll(); })
+      .subscribe();
+  }
 
   function fmt(n){
     var v = Math.round((n + Number.EPSILON) * 100) / 100;
@@ -861,32 +930,28 @@
 
   btnPersonaCancel.addEventListener('click', closeSheets);
 
-  btnPersonaSave.addEventListener('click', function(){
+  btnPersonaSave.addEventListener('click', async function(){
     var name = inputPersonaNombre.value.trim();
     if(!name){ showToast("Escribe un nombre"); return; }
     if(editingPersonaId){
-      var p = state.people.find(function(x){ return x.id === editingPersonaId; });
-      if(p) p.name = name;
+      await supabase.from('people').update({ name: name }).eq('id', editingPersonaId);
     } else {
-      state.people.push({ id: uid(), name: name, paid: false });
+      await supabase.from('people').insert({ group_id: groupId, name: name });
     }
-    save();
     closeSheets();
-    renderAll();
+    await fetchAll();
   });
 
-  btnPersonaDelete.addEventListener('click', function(){
+  btnPersonaDelete.addEventListener('click', async function(){
     if(!editingPersonaId) return;
     var hasExpenses = state.expenses.some(function(e){ return e.personId === editingPersonaId; });
     if(hasExpenses && !confirm("Esta persona tiene gastos registrados. \u00bfEliminarla de todos modos? Sus gastos tambien se borraran.")){
       return;
     }
     if(!hasExpenses && !confirm("\u00bfEliminar a esta persona?")) return;
-    state.expenses = state.expenses.filter(function(e){ return e.personId !== editingPersonaId; });
-    state.people = state.people.filter(function(x){ return x.id !== editingPersonaId; });
-    save();
+    await supabase.from('people').delete().eq('id', editingPersonaId);
     closeSheets();
-    renderAll();
+    await fetchAll();
     showToast("Eliminado");
   });
 
@@ -948,7 +1013,7 @@
   document.getElementById('btn-add-gasto').addEventListener('click', function(){ openGastoSheet(null); });
   document.getElementById('btn-add-persona').addEventListener('click', function(){ openPersonaSheet(null); });
 
-  btnGastoSave.addEventListener('click', function(){
+  btnGastoSave.addEventListener('click', async function(){
     var amount = parseFloat(inputGastoMonto.value);
     var desc = inputGastoDesc.value.trim();
     var personId = selectGastoPersona.value;
@@ -957,23 +1022,20 @@
     if(!desc){ desc = "Gasto sin descripcion"; }
 
     if(editingGastoId){
-      var g = state.expenses.find(function(x){ return x.id === editingGastoId; });
-      if(g){ g.amount = amount; g.desc = desc; g.personId = personId; }
+      await supabase.from('expenses').update({ amount: amount, description: desc, person_id: personId }).eq('id', editingGastoId);
     } else {
-      state.expenses.push({ id: uid(), amount: amount, desc: desc, personId: personId, paid: false });
+      await supabase.from('expenses').insert({ group_id: groupId, amount: amount, description: desc, person_id: personId });
     }
-    save();
     closeSheets();
-    renderAll();
+    await fetchAll();
   });
 
-  btnGastoDelete.addEventListener('click', function(){
+  btnGastoDelete.addEventListener('click', async function(){
     if(!editingGastoId) return;
     if(!confirm("\u00bfEliminar este gasto?")) return;
-    state.expenses = state.expenses.filter(function(x){ return x.id !== editingGastoId; });
-    save();
+    await supabase.from('expenses').delete().eq('id', editingGastoId);
     closeSheets();
-    renderAll();
+    await fetchAll();
     showToast("Eliminado");
   });
 
@@ -1036,14 +1098,12 @@
         box.appendChild(row);
       });
     box.querySelectorAll('[data-toggle]').forEach(function(btn){
-      btn.addEventListener('click', function(ev){
+      btn.addEventListener('click', async function(ev){
         ev.stopPropagation();
         var p = state.people.find(function(x){ return x.id === btn.dataset.toggle; });
         if(p){
-          p.paid = !p.paid;
-          save();
-          renderResumen();
-          renderPersonas();
+          await supabase.from('people').update({ paid: !p.paid }).eq('id', p.id);
+          await fetchAll();
         }
       });
     });
@@ -1112,14 +1172,12 @@
       el.addEventListener('click', function(){ openPersonaSheet(el.dataset.open); });
     });
     list.querySelectorAll('[data-toggle]').forEach(function(btn){
-      btn.addEventListener('click', function(ev){
+      btn.addEventListener('click', async function(ev){
         ev.stopPropagation();
         var p = state.people.find(function(x){ return x.id === btn.dataset.toggle; });
         if(p){
-          p.paid = !p.paid;
-          save();
-          renderPersonas();
-          renderResumen();
+          await supabase.from('people').update({ paid: !p.paid }).eq('id', p.id);
+          await fetchAll();
         }
       });
     });
@@ -1154,11 +1212,33 @@
     window.print();
   });
 
+  // ---------- Share ----------
+  document.getElementById('btn-share').addEventListener('click', async function(){
+    var url = window.location.href;
+    try{
+      if(navigator.share){
+        await navigator.share({ title: 'Carne Asada · Gastos', url: url });
+        return;
+      }
+    }catch(e){ return; }
+    try{
+      await navigator.clipboard.writeText(url);
+      showToast("Link copiado");
+    }catch(e){
+      showToast(url);
+    }
+  });
+
   // ---------- Init ----------
-  load();
-  renderAll();
-  setTab('resumen');
-  setTimeout(moveBlobToActive, 60);
+  async function init(){
+    await ensureGroup();
+    if(!groupId) return;
+    await fetchAll();
+    subscribeRealtime();
+    setTab('resumen');
+    setTimeout(moveBlobToActive, 60);
+  }
+  init();
 
 })();
 </script>
