@@ -650,6 +650,20 @@
   </div>
 </div>
 
+<div class="sheet" id="sheet-admin">
+  <div class="grabber"></div>
+  <div class="sheet-header">
+    <button class="sheet-cancel" id="btn-admin-cancel">Cancelar</button>
+    <h2>Modo administrador</h2>
+    <button class="sheet-cancel" id="btn-admin-activate" style="font-weight:590;">Activar</button>
+  </div>
+  <div class="field">
+    <label for="input-admin-pin">PIN</label>
+    <input type="text" inputmode="numeric" pattern="[0-9]*" id="input-admin-pin" placeholder="Dejalo vacio si sos el primero" maxlength="12">
+  </div>
+  <div class="row-subtitle" style="padding:0 4px 4px;" id="admin-sheet-hint">Si nadie configuro un PIN todavia, dejalo vacio y se genera uno para vos. Si ya existe, ingresalo para activar el modo admin en este dispositivo.</div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <!-- Hidden print-only summary -->
@@ -753,17 +767,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
   function adminPinKey(){ return 'carneAsadaAdminPin_' + groupId; }
   function isAdmin(){ return !!localStorage.getItem(adminPinKey()); }
 
-  async function activateAdmin(){
-    var key = adminPinKey();
+  function activateAdmin(){
     if(isAdmin()){ showToast("El modo admin ya esta activo en este dispositivo"); return; }
-    var entered = prompt("PIN de administrador (dejalo vacio si sos el primero en configurar este grupo):");
-    if(entered === null) return;
-    entered = entered.trim();
-    var res = await supabase.rpc('claim_admin', { p_group_id: groupId, p_pin: entered });
-    if(res.error || !res.data){ showToast("PIN incorrecto"); return; }
-    localStorage.setItem(key, res.data);
-    showToast(entered ? "Modo admin activado" : "Modo admin activado. PIN: " + res.data + " (guardalo)");
-    renderAll();
+    inputAdminPin.value = "";
+    openSheet(sheetAdmin);
+    setTimeout(function(){ inputAdminPin.focus(); }, 300);
   }
 
   async function setPaid(person){
@@ -934,6 +942,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
   var overlay = document.getElementById('overlay');
   var sheetPersona = document.getElementById('sheet-persona');
   var sheetGasto = document.getElementById('sheet-gasto');
+  var sheetAdmin = document.getElementById('sheet-admin');
 
   function openSheet(sheet){
     overlay.classList.add('show');
@@ -943,6 +952,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
     overlay.classList.remove('show');
     sheetPersona.classList.remove('show');
     sheetGasto.classList.remove('show');
+    sheetAdmin.classList.remove('show');
   }
   overlay.addEventListener('click', closeSheets);
 
@@ -1080,6 +1090,21 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
     closeSheets();
     await fetchAll();
     showToast("Eliminado");
+  });
+
+  // ---------- Admin sheet ----------
+  var inputAdminPin = document.getElementById('input-admin-pin');
+  document.getElementById('btn-admin-cancel').addEventListener('click', closeSheets);
+  document.getElementById('btn-admin-activate').addEventListener('click', async function(){
+    var entered = inputAdminPin.value.trim();
+    var key = adminPinKey();
+    var res = await supabase.rpc('claim_admin', { p_group_id: groupId, p_pin: entered });
+    if(res.error || !res.data){ showToast("PIN incorrecto"); return; }
+    localStorage.setItem(key, res.data);
+    closeSheets();
+    showToast(entered ? "Modo admin activado" : "Modo admin activado. PIN: " + res.data + " (guardalo)");
+    refreshAdminBtn();
+    renderAll();
   });
 
   // ---------- SF-symbol-style icons (inline) ----------
@@ -1244,10 +1269,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
   function refreshAdminBtn(){
     btnAdmin.classList.toggle('is-admin', isAdmin());
   }
-  btnAdmin.addEventListener('click', async function(){
-    await activateAdmin();
-    refreshAdminBtn();
-  });
+  btnAdmin.addEventListener('click', activateAdmin);
 
   // ---------- Share ----------
   document.getElementById('btn-share').addEventListener('click', async function(){
