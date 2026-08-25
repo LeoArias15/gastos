@@ -625,10 +625,12 @@
     <h2 id="sheet-gasto-title">Nuevo gasto</h2>
     <button class="sheet-cancel" id="btn-gasto-save" style="font-weight:590;">Listo</button>
   </div>
-  <div class="field amount-prefix">
+  <div class="field">
     <label for="input-gasto-monto">Monto</label>
-    <span class="pre">$</span>
-    <input type="number" inputmode="decimal" id="input-gasto-monto" placeholder="0.00">
+    <div class="amount-prefix">
+      <span class="pre">$</span>
+      <input type="number" inputmode="decimal" id="input-gasto-monto" placeholder="0.00">
+    </div>
   </div>
   <div class="field">
     <label for="input-gasto-desc">Descripcion</label>
