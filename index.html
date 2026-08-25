@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Carne Asada · Gastos</title>
+<link rel="icon" href="flavico.ico">
 <style>
   /*
     Tokens basados en Apple HIG (iOS 26):
@@ -743,6 +744,25 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
     renderAll();
   }
 
+  function adminPinKey(){ return 'carneAsadaAdminPin_' + groupId; }
+
+  async function tryTogglePaid(person, pinOverride){
+    var key = adminPinKey();
+    var hadPin = !!localStorage.getItem(key);
+    var pin = pinOverride !== undefined ? pinOverride : (localStorage.getItem(key) || '');
+    var res = await supabase.rpc('set_paid', { p_person_id: person.id, p_admin_pin: pin, p_paid: !person.paid });
+    if(res.error){ showToast("No se pudo actualizar"); return; }
+    if(res.data){
+      localStorage.setItem(key, res.data);
+      if(!hadPin){ showToast("PIN de administrador: " + res.data + " (guardalo)"); }
+      await fetchAll();
+      return;
+    }
+    var entered = prompt("PIN de administrador para marcar pagos:");
+    if(entered === null || entered.trim() === "") return;
+    await tryTogglePaid(person, entered.trim());
+  }
+
   function subscribeRealtime(){
     supabase.channel('group-' + groupId)
       .on('postgres_changes', { event:'*', schema:'public', table:'people', filter:'group_id=eq.' + groupId }, function(){ fetchAll(); })
@@ -1100,13 +1120,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
         box.appendChild(row);
       });
     box.querySelectorAll('[data-toggle]').forEach(function(btn){
-      btn.addEventListener('click', async function(ev){
+      btn.addEventListener('click', function(ev){
         ev.stopPropagation();
         var p = state.people.find(function(x){ return x.id === btn.dataset.toggle; });
-        if(p){
-          await supabase.from('people').update({ paid: !p.paid }).eq('id', p.id);
-          await fetchAll();
-        }
+        if(p){ tryTogglePaid(p); }
       });
     });
   }
@@ -1174,13 +1191,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
       el.addEventListener('click', function(){ openPersonaSheet(el.dataset.open); });
     });
     list.querySelectorAll('[data-toggle]').forEach(function(btn){
-      btn.addEventListener('click', async function(ev){
+      btn.addEventListener('click', function(ev){
         ev.stopPropagation();
         var p = state.people.find(function(x){ return x.id === btn.dataset.toggle; });
-        if(p){
-          await supabase.from('people').update({ paid: !p.paid }).eq('id', p.id);
-          await fetchAll();
-        }
+        if(p){ tryTogglePaid(p); }
       });
     });
   }
