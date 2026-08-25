@@ -659,9 +659,9 @@
   </div>
   <div class="field">
     <label for="input-admin-pin">PIN</label>
-    <input type="text" inputmode="numeric" pattern="[0-9]*" id="input-admin-pin" placeholder="Dejalo vacio si sos el primero" maxlength="12">
+    <input type="text" inputmode="numeric" pattern="[0-9]*" id="input-admin-pin" placeholder="Opcional, deja vacio para crear uno nuevo" maxlength="12">
   </div>
-  <div class="row-subtitle" style="padding:0 4px 4px;" id="admin-sheet-hint">Si nadie configuro un PIN todavia, dejalo vacio y se genera uno para vos. Si ya existe, ingresalo para activar el modo admin en este dispositivo.</div>
+  <div class="row-subtitle" style="padding:0 4px 4px;" id="admin-sheet-hint">Si nadie ha configurado un PIN todavia, deja el campo vacio y se genera uno para ti. Si ya existe, ingresa el PIN para activar el modo administrador en este dispositivo.</div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -1102,7 +1102,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
     if(res.error || !res.data){ showToast("PIN incorrecto"); return; }
     localStorage.setItem(key, res.data);
     closeSheets();
-    showToast(entered ? "Modo admin activado" : "Modo admin activado. PIN: " + res.data + " (guardalo)");
+    showToast(entered ? "Modo admin activado" : "Modo admin activado. Anota tu PIN: " + res.data);
     refreshAdminBtn();
     renderAll();
   });
