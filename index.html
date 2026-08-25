@@ -126,6 +126,7 @@
     transition:background .15s ease, transform .12s ease;
   }
   .nav-btn:active{ transform:scale(0.9); background:var(--fill-secondary); }
+  .nav-btn.is-admin{ background:rgba(48,209,88,0.16); color:var(--system-green); }
 
   /* ---------- Tab views ---------- */
   section.view{ display:none; padding:20px 20px 0; animation:rise .28s cubic-bezier(.2,.8,.2,1); }
@@ -511,6 +512,9 @@
           <div class="subtitle">Carne asada</div>
         </div>
         <div style="display:flex; gap:8px;">
+          <button class="nav-btn" id="btn-admin" title="Modo administrador">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+          </button>
           <button class="nav-btn" id="btn-share" title="Compartir link del grupo">
             <svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.5l6.8-3.9"/><path d="M8.6 13.5l6.8 3.9"/></svg>
           </button>
@@ -745,22 +749,37 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
   }
 
   function adminPinKey(){ return 'carneAsadaAdminPin_' + groupId; }
+  function isAdmin(){ return !!localStorage.getItem(adminPinKey()); }
 
-  async function tryTogglePaid(person, pinOverride){
+  async function activateAdmin(){
     var key = adminPinKey();
-    var hadPin = !!localStorage.getItem(key);
-    var pin = pinOverride !== undefined ? pinOverride : (localStorage.getItem(key) || '');
+    if(isAdmin()){ showToast("El modo admin ya esta activo en este dispositivo"); return; }
+    var entered = prompt("PIN de administrador (dejalo vacio si sos el primero en configurar este grupo):");
+    if(entered === null) return;
+    entered = entered.trim();
+    var res = await supabase.rpc('claim_admin', { p_group_id: groupId, p_pin: entered });
+    if(res.error || !res.data){ showToast("PIN incorrecto"); return; }
+    localStorage.setItem(key, res.data);
+    showToast(entered ? "Modo admin activado" : "Modo admin activado. PIN: " + res.data + " (guardalo)");
+    renderAll();
+  }
+
+  async function setPaid(person){
+    var pin = localStorage.getItem(adminPinKey()) || '';
     var res = await supabase.rpc('set_paid', { p_person_id: person.id, p_admin_pin: pin, p_paid: !person.paid });
-    if(res.error){ showToast("No se pudo actualizar"); return; }
-    if(res.data){
-      localStorage.setItem(key, res.data);
-      if(!hadPin){ showToast("PIN de administrador: " + res.data + " (guardalo)"); }
-      await fetchAll();
-      return;
-    }
-    var entered = prompt("PIN de administrador para marcar pagos:");
-    if(entered === null || entered.trim() === "") return;
-    await tryTogglePaid(person, entered.trim());
+    if(res.error || !res.data){ showToast("No se pudo actualizar"); return; }
+    await fetchAll();
+  }
+
+  function attachToggleHandlers(container){
+    container.querySelectorAll('[data-toggle]').forEach(function(btn){
+      btn.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        if(!isAdmin()){ showToast("Solo el administrador puede marcar pagos"); return; }
+        var p = state.people.find(function(x){ return x.id === btn.dataset.toggle; });
+        if(p){ setPaid(p); }
+      });
+    });
   }
 
   function subscribeRealtime(){
@@ -1119,13 +1138,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
           '</div>';
         box.appendChild(row);
       });
-    box.querySelectorAll('[data-toggle]').forEach(function(btn){
-      btn.addEventListener('click', function(ev){
-        ev.stopPropagation();
-        var p = state.people.find(function(x){ return x.id === btn.dataset.toggle; });
-        if(p){ tryTogglePaid(p); }
-      });
-    });
+    attachToggleHandlers(box);
   }
 
   function renderGastos(){
@@ -1190,13 +1203,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
     list.querySelectorAll('[data-open]').forEach(function(el){
       el.addEventListener('click', function(){ openPersonaSheet(el.dataset.open); });
     });
-    list.querySelectorAll('[data-toggle]').forEach(function(btn){
-      btn.addEventListener('click', function(ev){
-        ev.stopPropagation();
-        var p = state.people.find(function(x){ return x.id === btn.dataset.toggle; });
-        if(p){ tryTogglePaid(p); }
-      });
-    });
+    attachToggleHandlers(list);
   }
 
   function renderAll(){
@@ -1228,6 +1235,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
     window.print();
   });
 
+  // ---------- Admin ----------
+  var btnAdmin = document.getElementById('btn-admin');
+  function refreshAdminBtn(){
+    btnAdmin.classList.toggle('is-admin', isAdmin());
+  }
+  btnAdmin.addEventListener('click', async function(){
+    await activateAdmin();
+    refreshAdminBtn();
+  });
+
   // ---------- Share ----------
   document.getElementById('btn-share').addEventListener('click', async function(){
     var url = window.location.href;
@@ -1249,6 +1266,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
   async function init(){
     await ensureGroup();
     if(!groupId) return;
+    refreshAdminBtn();
     await fetchAll();
     subscribeRealtime();
     setTab('resumen');
